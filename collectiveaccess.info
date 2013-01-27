@@ -1,0 +1,18 @@
+name = CollectiveAccess
+description = Simple module that allows searching, browsing and item-level display of your CollectiveAccess data
+package = Web
+
+core = 7.x
+
+files[] = collectiveaccess.module
+files[] = collectiveaccess-search.tpl.php
+files[] = collectiveaccess-detail-ca-collections.tpl.php
+files[] = collectiveaccess-detail-ca-entities.tpl.php
+files[] = collectiveaccess-detail-ca-objects.tpl.php
+files[] = collectiveaccess-detail-ca-occurrences.tpl.php
+files[] = collectiveaccess-detail-ca-places.tpl.php
+files[] = /service_wrapper/ItemService.php
+files[] = /service_wrapper/BrowseService.php
+files[] = /service_wrapper/ModelService.php
+files[] = /service_wrapper/SearchService.php
+files[] = /service_wrapper/ServiceResult.php

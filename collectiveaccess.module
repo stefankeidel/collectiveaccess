@@ -1,0 +1,310 @@
+<?php
+
+/**
+ * @file CollectiveAccess module file
+ * This module allows browsing, searching and item-level display of CollectiveAccess records.
+ * Administrators can configure the specifics in the configuration menu.
+ */
+
+/**
+ * Default form values
+ */
+
+// maybe make this configurable?
+define('COLLECTIVEACCESS_DEFAULT_SEARCH_MENU_PATH', 'collectiveaccess/search');
+define('COLLECTIVEACCESS_DEFAULT_DETAIL_MENU_PATH', 'collectiveaccess/detail');
+
+/**
+ * Implement hook_help().
+ */
+function collectiveaccess_help($ps_path, $va_args){
+	switch($ps_path){
+		case 'admin/help#collectiveaccess':
+			return t("The CollectiveAccess module allows browsing, searching and item-level display of CollectiveAccess records via the built-in REST API.");
+		default:
+			break;
+	}
+}
+
+function collectiveaccess_permission() {
+	return array(
+		'use collectiveaccess search' => array(
+			'title' => t('Use CollectiveAccess search'),
+  		),
+	);
+}
+
+/**
+ * Implement hook_theme().
+ * Registers all theme hooks we provide.
+ */
+function collectiveaccess_theme() {
+	return array(
+		'collectiveaccess_search' => array(
+			'template' => 'collectiveaccess-search',
+			'variables' => array(
+					'available_facets' => array(),
+					'entity' => 'ca_objects',
+					'active_criteria' => array(),
+					'active_criteria_url_part' => '', 
+					'results' => array(),
+					'facet_info' => array()
+			),
+		),
+		'collectiveaccess_detail_ca_collections' => array(
+			'template' => 'collectiveaccess-detail-ca-collections',
+			'variables' => array('data' => array()),
+		),
+		'collectiveaccess_detail_ca_entities' => array(
+			'template' => 'collectiveaccess-detail-ca-entities',
+			'variables' => array('data' => array()),
+		),
+		'collectiveaccess_detail_ca_objects' => array(
+			'template' => 'collectiveaccess-detail-ca-objects',
+			'variables' => array('data' => array()),
+		),
+		'collectiveaccess_detail_ca_occurrences' => array(
+			'template' => 'collectiveaccess-detail-ca-occurrences',
+			'variables' => array('data' => array()),
+		),
+		'collectiveaccess_detail_ca_places' => array(
+			'template' => 'collectiveaccess-detail-ca-places',
+			'variables' => array('data' => array()),
+		),
+	);
+}
+
+/**
+ * Implement hook_menu().
+ */
+function collectiveaccess_menu(){
+	$va_items = array();
+
+	/* Administration menu */
+	$va_items['admin/config/system/collectiveaccess'] = array(
+		'title' => 'CollectiveAccess',
+		'description' => 'Configuration for the CollectiveAccess module.',
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('collectiveaccess_form'),
+		'access arguments' => array('Administer site configuration'),
+		'type' => MENU_NORMAL_ITEM,
+	);
+
+	/* Generic search page */
+	$va_items[COLLECTIVEACCESS_DEFAULT_SEARCH_MENU_PATH] = array(
+		'title' => t('Search CollectiveAccess'),
+		'description' => t('CollectiveAccess search page'),
+		'page callback' => 'collectiveaccess_search_view',
+		'access arguments' => array('use collectiveaccess search'),
+	);
+
+	/* Detail page */
+	$va_items[COLLECTIVEACCESS_DEFAULT_DETAIL_MENU_PATH] = array(
+		'title' => t('CollectiveAccess detail display'),
+		'description' => t('Detail display page for CollectiveAccess records'),
+		'page callback' => 'collectiveaccess_detail_view',
+		'access arguments' => array('view collectiveaccess detail'),
+	);
+
+	return $va_items;
+}
+
+/**
+ * Browse "controller"
+ */
+function collectiveaccess_search_view($ps_entity="ca_objects",$pa_facets=array()){
+	if(!_collectiveaccess_entitiy_is_valid($ps_entity)){
+		drupal_set_message(t("Invalid parameters"),"error");
+		return "";
+	}
+	$vs_url = _collectiveaccess_get_service_url();
+
+	// get active facets from URL (old and new ones)
+	$va_args = func_get_args();
+	$va_request_body = array();
+	$va_active_criteria_url_part = array();
+	foreach($va_args as $vs_arg){
+		if(sizeof($va_split = explode('\\',$vs_arg))==2){ // this is a facet
+			$va_request_body['criteria'][$va_split[0]][] = $va_split[1];
+			$va_active_criteria_url_part[] = $va_split[0]."\\".$va_split[1];
+		}
+	}
+
+	// get cached version of all facets for facet info
+	$va_facet_info = _collectiveaccess_get_info_for_all_facets($ps_entity);
+
+	// if criteria are set, get result set and get info for set facets for display
+	$va_set_facet_info = array();
+	if(isset($va_request_body['criteria']) && is_array($va_request_body['criteria']) && sizeof($va_request_body['criteria'])>0){
+		$vo_browse_service = new BrowseService($vs_url,$ps_entity,"GET");
+		$vo_browse_service->setRequestBody($va_request_body);
+		$vo_result = $vo_browse_service->request();
+		$va_result_set = $vo_result->getRawData();
+
+		// get info for set facets	
+		foreach($va_request_body['criteria'] as $vs_facet_code => $va_facet_values){
+			$va_set_facet_info[$vs_facet_code] = array(
+				"label_singular" => $va_facet_info[$vs_facet_code]["label_singular"],
+				"label_plural" => $va_facet_info[$vs_facet_code]["label_plural"],
+			);
+			foreach($va_facet_values as $vn_value){
+				$va_tmp = array_flip($va_active_criteria_url_part);
+				unset($va_tmp[$vs_facet_code."\\".$vn_value]);
+				$va_tmp = array_flip($va_tmp);		
+
+				$vs_label = null;
+				if(isset($va_facet_info[$vs_facet_code]['content'][$vn_value]['label'])){
+					$vs_label = $va_facet_info[$vs_facet_code]['content'][$vn_value]['label'];
+				}
+
+				$va_set_facet_info[$vs_facet_code]['criteria'][] = array(
+					'label' => $vs_label,
+					'url_part_without_this' => join("/",$va_tmp),
+				);
+			}
+		}
+	}
+
+	// get available facets
+	$vo_browse_service = new BrowseService($vs_url,$ps_entity,"OPTIONS");
+	$vo_browse_service->setRequestBody($va_request_body);
+
+	$vo_result = $vo_browse_service->request();
+
+	$va_data = $vo_result->getRawData();
+
+	// extract minimal facet data for display and link building
+	if($vo_result->isOk() && is_array($va_data)){
+		$va_available_facets = array();
+
+		foreach($va_data as $vs_facet_key => $va_facet){
+			$va_available_facets[$vs_facet_key] = array(
+				"label_singular" => $va_facet["label_singular"],
+				"label_plural" => $va_facet["label_plural"],
+				"group_mode" => $va_facet["group_mode"],
+			);
+
+			$va_available_facets[$vs_facet_key]["content"] = $va_facet["content"];
+		}
+
+		$va_vars = array(
+			"available_facets" => $va_available_facets, 
+			"entity" => $ps_entity, 
+			"active_criteria" => $va_set_facet_info,
+			"active_criteria_url_part" => join("/",$va_active_criteria_url_part),
+			"results" => (isset($va_result_set["results"]) && is_array($va_result_set["results"]) ? $va_result_set["results"] : array()),
+			"facet_info" => $va_facet_info,
+		);
+		return theme('collectiveaccess_search',$va_vars);
+	} else {
+		drupal_set_message(t("Getting data from CollectiveAccess failed. Check your module settings and parameters."),"error");
+		return "";
+	}
+}
+
+/**
+ * Detail "controller"
+ */
+function collectiveaccess_detail_view($ps_entity="ca_objects",$pn_id=1){
+	$vs_url = _collectiveaccess_get_service_url();
+	$vo_item_service = new ItemService($vs_url,$ps_entity,'GET',$pn_id);
+	$vo_result = $vo_item_service->request();
+
+	$va_data = $vo_result->getRawData();
+	if($vo_result->isOk() && is_array($va_data)){
+		$va_variables = array('data' => $va_data);
+		if(_collectiveaccess_entitiy_is_valid($ps_entity)){
+			return theme("collectiveaccess_detail_{$ps_entity}",$va_variables);
+		} else {
+			drupal_set_message(t("Invalid parameters"),"error");
+			return "";
+		}
+	} else {
+		drupal_set_message(t("Getting data from CollectiveAccess failed. Check your module settings and parameters."),"error");
+		return "";
+	}
+}
+
+/**
+ * Form builder; Create and display the CollectiveAccess configuration settings form.
+ */
+function collectiveaccess_form($va_form, &$va_form_state) {
+	$va_form['collectiveaccess_site_hostname'] = array(
+		'#type' => 'textfield',
+		'#default_value' => variable_get('collectiveaccess_site_hostname', 'localhost'),
+		'#title' => t('Hostname'),
+		'#size' => 20,
+		'#maxlength' => 80,
+		'#required' => TRUE,
+		'#description' => t('Name of the host of your CollectiveAccess instance, e.g. "localhost", "www.mydomain.org", "192.168.0.1". This setting is used to access CA via service API.'),
+	);
+
+	$va_form['collectiveaccess_enable_https'] = array(
+		'#type' => 'checkbox',
+		'#default_value' => variable_get('collectiveaccess_enable_https',0),
+		'#title' => t('Use HTTPS'),
+		'#description' => t('Use HTTPS for communication with CollectiveAccess. Your web server must be configured properly to support this.'),
+	);
+
+	$va_form['collectiveaccess_site_username'] = array(
+		'#type' => 'textfield',
+		'#default_value' => variable_get('collectiveaccess_site_username', 'drupal_user'),
+		'#title' => t('User name'),
+		'#size' => 20,
+		'#maxlength' => 80,
+		'#required' => TRUE,
+		'#description' => t('CollectiveAccess user name for authentication. It\'s recommended to set up a dedicated user with minimal privileges for this purpose.'),
+	);
+
+	$va_form['collectiveaccess_site_user_password'] = array(
+		'#type' => 'textfield',
+		'#default_value' => variable_get('collectiveaccess_site_user_password',''),
+		'#title' => t('Password'),
+		'#size' => 20,
+		'#maxlength' => 80,
+		'#required' => TRUE,
+		'#description' => t('Password for CollectiveAccess user. This is stored and displayed in plain text!'),
+	);
+		
+	return system_settings_form($va_form);;
+}
+
+/**
+ * Build and return CA service API url from local config
+ */
+function _collectiveaccess_get_service_url(){
+	// get local config
+	$vb_https = (bool) variable_get('collectiveaccess_enable_https',0);
+	$vs_host = variable_get('collectiveaccess_site_hostname', 'localhost');
+	$vs_user = variable_get('collectiveaccess_site_username');
+	$vs_pass = variable_get('collectiveaccess_site_user_password');
+
+	$vs_url  = ($vb_https ? "https://" : "http://");
+	$vs_url .= (($vs_user && $vs_pass) ? $vs_user.":".$vs_pass."@" : "");
+	$vs_url .= $vs_host."/";
+
+	return $vs_url;
+}
+
+function _collectiveaccess_entitiy_is_valid($ps_entity){
+	return in_array($ps_entity,array("ca_collections","ca_entities","ca_objects","ca_occurrences","ca_places"));
+}
+
+function _collectiveaccess_get_info_for_all_facets($ps_entity){
+	/*if($va_cache = cache_get('collectiveaccess_facet_info_cache','cache')){
+		if(is_array($va_cache)) print "GET ARRAY FROM CACHE\n";
+		return $va_cache;
+	} else {*/
+		$vs_url = _collectiveaccess_get_service_url();
+		$vo_browse_service = new BrowseService($vs_url,$ps_entity,"OPTIONS");
+		$va_post = array();
+		$va_post["ungrouped"] = true;
+		$vo_browse_service->setRequestBody($va_post);
+
+		$vo_result = $vo_browse_service->request();
+		$va_data = $vo_result->getRawData();
+		//cache_set('collectiveaccess_facet_info_cache',$va_data,'cache',CACHE_TEMPORARY);
+		return $va_data;
+	/*}*/
+}
+
