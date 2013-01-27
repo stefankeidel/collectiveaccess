@@ -137,6 +137,11 @@ function collectiveaccess_search_view($ps_entity="ca_objects",$pa_facets=array()
 	$va_set_facet_info = array();
 	if(isset($va_request_body['criteria']) && is_array($va_request_body['criteria']) && sizeof($va_request_body['criteria'])>0){
 		$vo_browse_service = new BrowseService($vs_url,$ps_entity,"GET");
+		if($vs_bundles = variable_get('collectiveaccess_bundles_for_search_results','')){
+			if(is_array($va_bundles = json_decode($vs_bundles,true))){
+				$va_request_body["bundles"] = $va_bundles;
+			}
+		}
 		$vo_browse_service->setRequestBody($va_request_body);
 		$vo_result = $vo_browse_service->request();
 		$va_result_set = $vo_result->getRawData();
@@ -264,6 +269,15 @@ function collectiveaccess_form($va_form, &$va_form_state) {
 		'#maxlength' => 80,
 		'#required' => TRUE,
 		'#description' => t('Password for CollectiveAccess user. This is stored and displayed in plain text!'),
+	);
+
+	$va_form['collectiveaccess_bundles_for_search_results'] = array(
+		'#type' => 'textarea',
+		'#default_value' => variable_get('collectiveaccess_bundles_for_search_results',''),
+		'#title' => t('Bundles for search results'),
+		'#rows' => 10,
+		'#required' => FALSE,
+		'#description' => t('JSON-formatted list of additional bundles to get for browse result display. See http://docs.collectiveaccess.org/wiki/Web_Service_API#Browsing for details on the formatting.'),
 	);
 		
 	return system_settings_form($va_form);;
