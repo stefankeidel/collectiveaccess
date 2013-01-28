@@ -46,11 +46,11 @@ function collectiveaccess_theme() {
 					'available_facets' => array(),
 					'entity' => 'ca_objects',
 					'active_criteria' => array(),
-					'active_criteria_url_part' => '', 
-					'results' => array(),
+					'active_criteria_url_part' => '',
 					'facet_info' => array()
 			),
 		),
+		// detail
 		'collectiveaccess_detail_ca_collections' => array(
 			'template' => 'collectiveaccess-detail-ca-collections',
 			'variables' => array('data' => array()),
@@ -71,6 +71,28 @@ function collectiveaccess_theme() {
 			'template' => 'collectiveaccess-detail-ca-places',
 			'variables' => array('data' => array()),
 		),
+		// results
+		'collectiveaccess_result_ca_collections' => array(
+			'template' => 'collectiveaccess-result-ca-collections',
+			'variables' => array('results' => array(),'entity' => 'ca_objects'),
+		),
+		'collectiveaccess_result_ca_entities' => array(
+			'template' => 'collectiveaccess-result-ca-entities',
+			'variables' => array('results' => array(),'entity' => 'ca_objects'),
+		),
+		'collectiveaccess_result_ca_objects' => array(
+			'template' => 'collectiveaccess-result-ca-objects',
+			'variables' => array('results' => array(),'entity' => 'ca_objects'),
+		),
+		'collectiveaccess_result_ca_occurrences' => array(
+			'template' => 'collectiveaccess-result-ca-occurrences',
+			'variables' => array('results' => array(),'entity' => 'ca_objects'),
+		),
+		'collectiveaccess_result_ca_places' => array(
+			'template' => 'collectiveaccess-result-ca-places',
+			'variables' => array('results' => array(),'entity' => 'ca_objects'),
+		),
+
 	);
 }
 
@@ -197,10 +219,14 @@ function collectiveaccess_search_view($ps_entity="ca_objects",$pa_facets=array()
 			"entity" => $ps_entity, 
 			"active_criteria" => $va_set_facet_info,
 			"active_criteria_url_part" => join("/",$va_active_criteria_url_part),
-			"results" => (isset($va_result_set["results"]) && is_array($va_result_set["results"]) ? $va_result_set["results"] : array()),
 			"facet_info" => $va_facet_info,
 		);
-		return theme('collectiveaccess_search',$va_vars);
+		return 
+			theme('collectiveaccess_search',$va_vars).
+			theme('collectiveaccess_result_'.$ps_entity,array(
+				"results" => (isset($va_result_set["results"]) && is_array($va_result_set["results"]) ? $va_result_set["results"] : array()),
+				"entity" => $ps_entity,
+			));
 	} else {
 		drupal_set_message(t("Getting data from CollectiveAccess failed. Check your module settings and parameters."),"error");
 		return "";
