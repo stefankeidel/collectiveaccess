@@ -206,7 +206,7 @@ function collectiveaccess_search_view($ps_entity="ca_objects",$pa_facets=array()
 				"entity" => $ps_entity,
 			));
 	} else {
-		drupal_set_message(t("Getting data from CollectiveAccess failed. Check your module settings and parameters."),"error");
+		drupal_set_message(t("Getting data from CollectiveAccess failed. Check your module settings and parameters."), "error");
 		return "";
 	}
 }
@@ -214,7 +214,7 @@ function collectiveaccess_search_view($ps_entity="ca_objects",$pa_facets=array()
 /**
  * Detail "controller"
  */
-function collectiveaccess_detail_view($ps_entity="ca_objects",$pn_id=1){
+function collectiveaccess_detail_view($ps_entity="ca_objects", $pn_id=1){
 	$vs_url = _collectiveaccess_get_service_url();
 	$vo_item_service = new ItemService($vs_url,$ps_entity,'GET',$pn_id);
 	$vo_result = $vo_item_service->request();
@@ -300,18 +300,6 @@ function collectiveaccess_form($va_form, &$va_form_state) {
 				array('@entity' => $vs_entity)
 			),
 		);
-		$va_form['advanced'][$vs_entity]['collectiveaccess_bundles_for_search_index_'.$vs_entity] = array(
-			'#type' => 'textarea',
-			'#default_value' => variable_get('collectiveaccess_bundles_for_search_index_'.$vs_entity,''),
-			'#title' => t('Bundles for indexing @entity records',array('@entity' => $vs_entity)),
-			'#rows' => 10,
-			'#required' => FALSE,
-			'#description' => t(
-				'JSON-formatted list of additional bundles to get for indexing of @entity records for the internal drupal search.
-				See http://docs.collectiveaccess.org/wiki/Web_Service_API#Browsing for details on the formatting.',
-				array('@entity' => $vs_entity)
-			),
-		);
 	}
 		
 	return system_settings_form($va_form);;
@@ -325,12 +313,111 @@ function collectiveaccess_form($va_form, &$va_form_state) {
 function collectiveaccess_search_info(){
 	return array(
 		'title' => 'CollectiveAccess', 
-		'path' => 'collectiveaccess'
+		'path' => 'collectiveaccess',
+		'conditions_callback' => 'collectiveaccess_search_conditions_callback'
 	);
 }
 
+function collectiveaccess_form_search_form_alter(&$form,$form_state){
+	//debug($form, '$form contents:', TRUE);
+	if (isset($form['module']) && $form['module']['#value'] == 'collectiveaccess' && user_access('use collectiveaccess search')) {
+		$form['collectiveaccess_advanced'] = array(
+			'#type' => 'fieldset',
+			'#title' => t('Advanced'),
+			'#collapsible' => TRUE, 
+			'#collapsed' => FALSE,
+			'#attributes' => array('class' => array('search-advanced')),
+		);
+		// CollectiveAccess types
+		$types = drupal_map_assoc(unserialize(COLLECTIVEACCESS_SUPPORTED_ENTITIES));
+		$form['collectiveaccess_advanced']['collectiveaccess_type'] = array(
+			'#type' => 'radios', 
+			'#title' => t('Restrict to module'), 
+			'#options' => array_merge(array('all' => t('all')),$types),
+		);
+		/*$form['collectiveaccess_advanced']['submit'] = array(
+			'#type' => 'submit', 
+			'#value' => t('Search'), 
+			'#weight' => 100,
+		);*/
+
+		$form['#validate'][] = 'collectiveaccess_search_validate';
+	}
+}
+
+function collectiveaccess_search_conditions_callback(){
+	//debug(func_get_args(), 'callback arguments', TRUE);
+}
+
+/**
+ * Search form validate callback
+ * Adds type filter to keyword query if set
+ */
+function collectiveaccess_search_validate($form,&$form_state){
+	$keys = $form_state['values']['processed_keys'];
+	if(isset($form_state['values']['collectiveaccess_type'])){
+		$vs_type = $form_state['values']['collectiveaccess_type'];
+		if(in_array($vs_type, unserialize(COLLECTIVEACCESS_SUPPORTED_ENTITIES))){
+			form_set_value($form['basic']['processed_keys'], $keys." ca_type:{$vs_type}", $form_state);
+		}
+	}
+	//debug($form_state, '$form state contents after submit:', TRUE);
+}
+
 function collectiveaccess_search_execute($ps_keys,$pa_conditions=array()){
-	return array();
+	
+	/*
+'link': Required. The URL of the found item.
+'type': The type of item (such as the content type).
+'title': Required. The name of the item.
+'user': The author of the item.
+'date': A timestamp when the item was last modified.
+'extra': An array of optional extra information items.
+'snippet': An excerpt or preview to show with the result (can be generated with search_excerpt()).
+'language': Language code for the item (usually two characters).
+	 */
+	// get type filter if set
+	$va_matches = array();
+	$ps_only_table = null;
+	if(preg_match("/(.*)collectiveaccess\_type\:([a-z_]+)/",$ps_keys,$va_matches)){
+		//debug($va_matches, 'matches', TRUE);
+		if(isset($va_matches[1])){
+			$ps_keys = $va_matches[1];
+		}
+		if(isset($va_matches[2])){
+			$ps_only_table = trim($va_matches[2]);
+		}
+	}
+
+
+	$va_return = array();
+	$vs_url = _collectiveaccess_get_service_url();
+	foreach(unserialize(COLLECTIVEACCESS_SUPPORTED_ENTITIES) as $vs_entity){
+		if($ps_only_table && ($vs_entity != $ps_only_table)) continue;
+
+		$va_request_body = array();
+		if($vs_bundles = variable_get('collectiveaccess_bundles_for_search_results_'.$vs_entity,'')){
+			if(is_array($va_bundles = json_decode($vs_bundles,true))){ // this should probably not fail silently
+				$va_request_body["bundles"] = $va_bundles;
+			}
+		}
+
+		$vo_search_service = new SearchService($vs_url,$vs_entity,$ps_keys);
+		$vo_search_service->setRequestBody($va_request_body);
+		$vo_result = $vo_search_service->request();
+
+		$va_data = $vo_result->getRawData();
+		if(isset($va_data["results"]) && is_array($va_data["results"])){
+			foreach($va_data["results"] as $va_result){
+				$va_return[] = array(
+					'link' => url(COLLECTIVEACCESS_DEFAULT_DETAIL_MENU_PATH."/".$vs_entity."/".$va_result["id"]),
+					'type' => $vs_entity,
+					'title' => $va_result["display_label"],
+				);
+			}
+		}
+	}
+	return $va_return;
 }
 
 
