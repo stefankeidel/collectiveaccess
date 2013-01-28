@@ -13,6 +13,13 @@
 // maybe make this configurable?
 define('COLLECTIVEACCESS_DEFAULT_SEARCH_MENU_PATH', 'collectiveaccess/search');
 define('COLLECTIVEACCESS_DEFAULT_DETAIL_MENU_PATH', 'collectiveaccess/detail');
+define('COLLECTIVEACCESS_SUPPORTED_ENTITIES', serialize(array(
+	'ca_collections',
+	'ca_entities',
+	'ca_objects',
+	'ca_occurrences',
+	'ca_places'
+)));
 
 /**
  * Implement hook_help().
@@ -39,7 +46,7 @@ function collectiveaccess_permission() {
  * Registers all theme hooks we provide.
  */
 function collectiveaccess_theme() {
-	return array(
+	$va_return = array(
 		'collectiveaccess_search' => array(
 			'template' => 'collectiveaccess-search',
 			'variables' => array(
@@ -49,51 +56,22 @@ function collectiveaccess_theme() {
 					'active_criteria_url_part' => '',
 					'facet_info' => array()
 			),
-		),
-		// detail
-		'collectiveaccess_detail_ca_collections' => array(
-			'template' => 'collectiveaccess-detail-ca-collections',
-			'variables' => array('data' => array()),
-		),
-		'collectiveaccess_detail_ca_entities' => array(
-			'template' => 'collectiveaccess-detail-ca-entities',
-			'variables' => array('data' => array()),
-		),
-		'collectiveaccess_detail_ca_objects' => array(
-			'template' => 'collectiveaccess-detail-ca-objects',
-			'variables' => array('data' => array()),
-		),
-		'collectiveaccess_detail_ca_occurrences' => array(
-			'template' => 'collectiveaccess-detail-ca-occurrences',
-			'variables' => array('data' => array()),
-		),
-		'collectiveaccess_detail_ca_places' => array(
-			'template' => 'collectiveaccess-detail-ca-places',
-			'variables' => array('data' => array()),
-		),
-		// results
-		'collectiveaccess_result_ca_collections' => array(
-			'template' => 'collectiveaccess-result-ca-collections',
-			'variables' => array('results' => array(),'entity' => 'ca_objects'),
-		),
-		'collectiveaccess_result_ca_entities' => array(
-			'template' => 'collectiveaccess-result-ca-entities',
-			'variables' => array('results' => array(),'entity' => 'ca_objects'),
-		),
-		'collectiveaccess_result_ca_objects' => array(
-			'template' => 'collectiveaccess-result-ca-objects',
-			'variables' => array('results' => array(),'entity' => 'ca_objects'),
-		),
-		'collectiveaccess_result_ca_occurrences' => array(
-			'template' => 'collectiveaccess-result-ca-occurrences',
-			'variables' => array('results' => array(),'entity' => 'ca_objects'),
-		),
-		'collectiveaccess_result_ca_places' => array(
-			'template' => 'collectiveaccess-result-ca-places',
-			'variables' => array('results' => array(),'entity' => 'ca_objects'),
-		),
-
+		)
 	);
+
+	foreach(unserialize(COLLECTIVEACCESS_SUPPORTED_ENTITIES) as $vs_entity){
+			$va_return['collectiveaccess_detail_'.$vs_entity] = array(
+				'template' => 'collectiveaccess-detail-'.str_replace('_', '-', $vs_entity),
+				'variables' => array('data' => array()),
+			);	
+			
+			$va_return['collectiveaccess_result_'.$vs_entity] = array(
+				'template' => 'collectiveaccess-result-'.str_replace('_', '-', $vs_entity),
+				'variables' => array('results' => array(),'entity' => 'ca_objects'),
+			);
+	}
+
+	return $va_return;
 }
 
 /**
@@ -159,8 +137,8 @@ function collectiveaccess_search_view($ps_entity="ca_objects",$pa_facets=array()
 	$va_set_facet_info = array();
 	if(isset($va_request_body['criteria']) && is_array($va_request_body['criteria']) && sizeof($va_request_body['criteria'])>0){
 		$vo_browse_service = new BrowseService($vs_url,$ps_entity,"GET");
-		if($vs_bundles = variable_get('collectiveaccess_bundles_for_search_results','')){
-			if(is_array($va_bundles = json_decode($vs_bundles,true))){
+		if($vs_bundles = variable_get('collectiveaccess_bundles_for_search_results_'.$ps_entity,'')){
+			if(is_array($va_bundles = json_decode($vs_bundles,true))){ // this should probably not fail silently
 				$va_request_body["bundles"] = $va_bundles;
 			}
 		}
@@ -297,17 +275,66 @@ function collectiveaccess_form($va_form, &$va_form_state) {
 		'#description' => t('Password for CollectiveAccess user. This is stored and displayed in plain text!'),
 	);
 
-	$va_form['collectiveaccess_bundles_for_search_results'] = array(
-		'#type' => 'textarea',
-		'#default_value' => variable_get('collectiveaccess_bundles_for_search_results',''),
-		'#title' => t('Bundles for search results'),
-		'#rows' => 10,
-		'#required' => FALSE,
-		'#description' => t('JSON-formatted list of additional bundles to get for browse result display. See http://docs.collectiveaccess.org/wiki/Web_Service_API#Browsing for details on the formatting.'),
+	 $va_form['advanced'] = array(
+		'#type' => 'fieldset',
+		'#title' => t('Advanced'),
+		'#collapsible' => TRUE,
+		'#collapsed' => TRUE,
 	);
+	foreach(unserialize(COLLECTIVEACCESS_SUPPORTED_ENTITIES) as $vs_entity){
+	 	$va_form['advanced'][$vs_entity] = array(
+			'#type' => 'fieldset',
+			'#title' => $vs_entity,
+			'#collapsible' => TRUE,
+			'#collapsed' => TRUE,
+		);
+		$va_form['advanced'][$vs_entity]['collectiveaccess_bundles_for_search_results_'.$vs_entity] = array(
+			'#type' => 'textarea',
+			'#default_value' => variable_get('collectiveaccess_bundles_for_search_results_'.$vs_entity,''),
+			'#title' => t('Bundles for @entity search results',array('@entity' => $vs_entity)),
+			'#rows' => 10,
+			'#required' => FALSE,
+			'#description' => t(
+				'JSON-formatted list of additional bundles to get for @entity browse result display.
+				See http://docs.collectiveaccess.org/wiki/Web_Service_API#Browsing for details on the formatting.',
+				array('@entity' => $vs_entity)
+			),
+		);
+		$va_form['advanced'][$vs_entity]['collectiveaccess_bundles_for_search_index_'.$vs_entity] = array(
+			'#type' => 'textarea',
+			'#default_value' => variable_get('collectiveaccess_bundles_for_search_index_'.$vs_entity,''),
+			'#title' => t('Bundles for indexing @entity records',array('@entity' => $vs_entity)),
+			'#rows' => 10,
+			'#required' => FALSE,
+			'#description' => t(
+				'JSON-formatted list of additional bundles to get for indexing of @entity records for the internal drupal search.
+				See http://docs.collectiveaccess.org/wiki/Web_Service_API#Browsing for details on the formatting.',
+				array('@entity' => $vs_entity)
+			),
+		);
+	}
 		
 	return system_settings_form($va_form);;
 }
+
+// INTEGRATION WITH DRUPAL SEARCH
+
+/**
+ * Implement hook_search_info().
+ */
+function collectiveaccess_search_info(){
+	return array(
+		'title' => 'CollectiveAccess', 
+		'path' => 'collectiveaccess'
+	);
+}
+
+function collectiveaccess_search_execute($ps_keys,$pa_conditions=array()){
+	return array();
+}
+
+
+// UTILITIES
 
 /**
  * Build and return CA service API url from local config
