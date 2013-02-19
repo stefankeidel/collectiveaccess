@@ -148,10 +148,12 @@ function collectiveaccess_search_view($ps_entity="ca_objects",$pa_facets=array()
 
 		// get info for set facets	
 		foreach($va_request_body['criteria'] as $vs_facet_code => $va_facet_values){
-			$va_set_facet_info[$vs_facet_code] = array(
-				"label_singular" => $va_facet_info[$vs_facet_code]["label_singular"],
-				"label_plural" => $va_facet_info[$vs_facet_code]["label_plural"],
-			);
+			if(isset($va_facet_info[$vs_facet_code])){
+				$va_set_facet_info[$vs_facet_code] = array(
+					"label_singular" => $va_facet_info[$vs_facet_code]["label_singular"],
+					"label_plural" => $va_facet_info[$vs_facet_code]["label_plural"],
+				);
+			}
 			foreach($va_facet_values as $vn_value){
 				$va_tmp = array_flip($va_active_criteria_url_part);
 				unset($va_tmp[$vs_facet_code."\\".$vn_value]);
@@ -379,7 +381,7 @@ function collectiveaccess_search_execute($ps_keys,$pa_conditions=array()){
 	// get type filter if set
 	$va_matches = array();
 	$ps_only_table = null;
-	if(preg_match("/(.*)collectiveaccess\_type\:([a-z_]+)/",$ps_keys,$va_matches)){
+	if(preg_match("/(.*)ca\_type\:([a-z_]+)/",$ps_keys,$va_matches)){
 		//debug($va_matches, 'matches', TRUE);
 		if(isset($va_matches[1])){
 			$ps_keys = $va_matches[1];
@@ -413,6 +415,10 @@ function collectiveaccess_search_execute($ps_keys,$pa_conditions=array()){
 					'link' => url(COLLECTIVEACCESS_DEFAULT_DETAIL_MENU_PATH."/".$vs_entity."/".$va_result["id"]),
 					'type' => $vs_entity,
 					'title' => $va_result["display_label"],
+					'extra' => array(
+						'idno' => isset($va_result['idno']) ? $va_result['idno'] : null,
+						'type' => $vs_entity,
+					),
 				);
 			}
 		}
@@ -445,10 +451,12 @@ function _collectiveaccess_entitiy_is_valid($ps_entity){
 }
 
 function _collectiveaccess_get_info_for_all_facets($ps_entity){
-	/*if($va_cache = cache_get('collectiveaccess_facet_info_cache','cache')){
-		if(is_array($va_cache)) print "GET ARRAY FROM CACHE\n";
-		return $va_cache;
-	} else {*/
+	if(
+		($vo_cache = cache_get('collectiveaccess_facet_info_cache_'.$ps_entity,'cache')) &&
+		is_array($vo_cache->data)
+	){
+		return $vo_cache->data;
+	} else {
 		$vs_url = _collectiveaccess_get_service_url();
 		$vo_browse_service = new BrowseService($vs_url,$ps_entity,"OPTIONS");
 		$va_post = array();
@@ -457,8 +465,8 @@ function _collectiveaccess_get_info_for_all_facets($ps_entity){
 
 		$vo_result = $vo_browse_service->request();
 		$va_data = $vo_result->getRawData();
-		//cache_set('collectiveaccess_facet_info_cache',$va_data,'cache',CACHE_TEMPORARY);
+		cache_set('collectiveaccess_facet_info_cache_'.$ps_entity,$va_data,'cache',CACHE_TEMPORARY);
 		return $va_data;
-	/*}*/
+	}
 }
 
